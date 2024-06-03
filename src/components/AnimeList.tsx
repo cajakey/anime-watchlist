@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getAnimeList, deleteAnime } from '../services/animes';
 import { Anime } from '../types';
+import axios from 'axios';
 
 interface AnimeListProps {
     onEdit: (anime: Anime) => void;
@@ -13,14 +14,40 @@ const AnimeList: React.FC<AnimeListProps> = ({ onEdit, onCancel }) => {
     const [sortKey, setSortKey] = useState<'title' | 'genre'>('title');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
     const [editingId, setEditingId] = useState<number | undefined>();
+    const [wikiSummaries, setWikiSummaries] = useState<{ [key: number]: string }>({});
 
     useEffect(() => {
         fetchAnime();
     }, []);
 
+    useEffect(() => {
+        fetchAnime(filter);
+    }, [filter]);
+
     const fetchAnime = async (titleFilter?: string) => {
         const data = await getAnimeList(titleFilter);
         setAnimeList(data);
+        fetchWikiSummaries(data);
+    };
+
+    const fetchWikiSummaries = async (animeList: Anime[]) => {
+        const summaries: { [key: number]: string } = {};
+        for (const anime of animeList) {
+            if (anime.id !== undefined) {
+                try {
+                    const response = await axios.get(
+                        `https://en.wikipedia.org/w/api.php?action=query&list=search&format=json&origin=*&srsearch=${anime.title}`
+                    );
+                    const snippet = response.data.query.search[0]?.snippet;
+                    if (snippet) {
+                        summaries[anime.id] = snippet;
+                    }
+                } catch (error) {
+                    console.error("Error fetching data from Wikipedia API", error);
+                }
+            }
+        }
+        setWikiSummaries(summaries);
     };
 
     const handleDelete = async (id: number | undefined) => {
@@ -43,10 +70,6 @@ const AnimeList: React.FC<AnimeListProps> = ({ onEdit, onCancel }) => {
         setEditingId(undefined);
         onCancel();
     };
-
-    useEffect(() => {
-        fetchAnime(filter);
-    }, [filter]);
 
     const sortedAnimeList = [...animeList].sort((a, b) => {
         if (sortKey === 'title') {
@@ -71,6 +94,9 @@ const AnimeList: React.FC<AnimeListProps> = ({ onEdit, onCancel }) => {
                 {sortedAnimeList.map((anime) => (
                     <li key={anime.id}>
                         {anime.title} - {anime.genre} (S{anime.season}E{anime.episode})
+                        {anime.id !== undefined && wikiSummaries[anime.id] && (
+                            <p dangerouslySetInnerHTML={{ __html: wikiSummaries[anime.id] }}></p>
+                        )}
                         <div>
                             {editingId === anime.id ? (
                                 <button className="cancel" onClick={handleCancelEdit}>Cancel</button>
